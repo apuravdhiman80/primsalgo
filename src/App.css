@@ -1,76 +1,175 @@
+/* App.css — Responsive (mobile-first enhancements + desktop improvements) */
+
+/* ---------- Root / Theme ---------- */
 :root{
-  --bg:#0f1724; /* deep blue-gray */
-  --card:#0b1220;
+  --bg:#071028;
+  --card:#081126;
   --muted:#9aa6b2;
   --accent:#67e8f9;
   --accent-2:#34d399;
+  --accent-3:#7c3aed;
   --danger:#fb7185;
-  --glass: rgba(255,255,255,0.03);
+  --glass: rgba(255,255,255,0.04);
+  --glass-2: rgba(255,255,255,0.02);
+  --glass-3: rgba(255,255,255,0.012);
+  --glow: 0 10px 30px rgba(104, 160, 255, 0.06);
+  --max-canvas-height: 520px; /* fallback for small screens */
 }
 
-*{box-sizing:border-box;font-family:Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial}
+/* ---------- Base ---------- */
+*{box-sizing:border-box;font-family:Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial;margin:0;padding:0}
+html,body,#root{height:100%}
+body{
+  background:
+    radial-gradient(1200px 600px at 10% 10%, rgba(99,102,241,0.06), transparent 8%),
+    linear-gradient(180deg,#061322 0%, #071028 100%);
+  color:#e6eef6;
+  -webkit-font-smoothing:antialiased;
+  -moz-osx-font-smoothing:grayscale;
+  -webkit-touch-callout: none; /* prevent long-press text menu on mobile */
+}
 
-body,html,#root{height:100%;margin:0;background:linear-gradient(180deg,#071024 0%, #061423 100%);color:#e6eef6}
-
-.app-root{padding:18px;display:flex;flex-direction:column;gap:14px;min-height:100vh}
+.app-root{padding:16px;display:flex;flex-direction:column;gap:14px;min-height:100vh}
 .app-header{display:flex;flex-direction:column;gap:6px}
-.app-header h1{margin:0;font-size:20px}
+.app-header h1{margin:0;font-size:20px;letter-spacing:0.2px}
 .app-header .sub{color:var(--muted);font-size:13px}
 
-.main-grid{display:grid;grid-template-columns:320px 1fr;gap:18px;align-items:start}
-.controls{background:var(--card);padding:12px;border-radius:12px;box-shadow:0 8px 24px rgba(2,6,23,0.6)}
-.control-row{display:flex;align-items:center;gap:10px;margin-bottom:10px}
-.control-row label{width:90px;color:var(--muted);font-size:13px}
-.control-row input[type=range]{flex:1}
-.control-row .val{width:54px;text-align:right;color:var(--accent);font-weight:600}
-.controls select{width:100%;padding:6px;border-radius:8px;background:var(--glass);border:1px solid rgba(255,255,255,0.03);color:inherit}
+/* ---------- Layout ---------- */
+/* Mobile-first: single column layout */
+.main-grid{display:flex;flex-direction:column;gap:12px;align-items:stretch}
 
-.buttons{display:flex;flex-wrap:wrap;gap:8px;margin:8px 0}
-button{background:transparent;border:1px solid rgba(255,255,255,0.06);padding:8px 10px;border-radius:8px;color:inherit;cursor:pointer}
-button.primary{background:linear-gradient(90deg,var(--accent),#60a5fa);color:#06223e;border:0}
+/* Controls card */
+.controls{
+  background:linear-gradient(180deg, rgba(255,255,255,0.02), transparent);
+  padding:12px;border-radius:12px;border:1px solid rgba(255,255,255,0.03);
+  backdrop-filter: blur(6px);box-shadow:var(--glow);
+  display:flex;flex-direction:column;gap:10px;
+}
+.control-row{display:flex;align-items:center;gap:8px;margin-bottom:8px}
+.control-row label{width:95px;color:var(--muted);font-size:13px}
+.control-row input[type=range]{flex:1;touch-action:none}
+.control-row .val{width:52px;text-align:right;color:var(--accent);font-weight:700;font-size:13px}
+.controls select{width:100%;padding:8px;border-radius:10px;background:transparent;border:1px solid rgba(255,255,255,0.04);color:inherit}
+
+/* Buttons — stacked on mobile for easy tapping */
+.buttons{display:flex;flex-direction:column;gap:8px;margin:6px 0}
+button{
+  background:transparent;border:1px solid rgba(255,255,255,0.06);
+  padding:12px;border-radius:10px;color:inherit;cursor:pointer;
+  transition:transform .12s ease, box-shadow .12s ease;
+  font-size:15px;line-height:1.1;
+}
+button:active{transform:translateY(1px)}
+button.primary{background:linear-gradient(90deg,var(--accent),#60a5fa);color:#06223e;border:0;box-shadow:0 8px 20px rgba(96,165,250,0.12)}
 button.danger{background:linear-gradient(90deg,var(--danger),#f97316);color:#240007;border:0}
-button:disabled{opacity:0.5;cursor:not-allowed}
+button:disabled{opacity:0.45;cursor:not-allowed;transform:none}
 
-.meta{margin-top:8px;color:var(--muted);font-size:13px;display:flex;flex-direction:column;gap:6px}
-.options{margin-top:8px;color:var(--muted);font-size:13px}
-.legend{margin-top:12px;display:flex;flex-direction:column;gap:6px}
-.legend-item{display:flex;align-items:center;gap:8px;color:var(--muted)}
-.legend .sw{display:inline-block;width:18px;height:12px;border-radius:3px}
-.legend .sw.mst{background:linear-gradient(90deg,var(--accent-2),#10b981)}
-.legend .sw.frontier{background:linear-gradient(90deg,var(--accent),#fb923c)}
-.legend .sw.normal{background:rgba(255,255,255,0.04)}
+/* Compact meta / legend / options */
+.meta{margin-top:6px;color:var(--muted);font-size:13px;display:flex;flex-direction:column;gap:6px}
+.options{margin-top:6px;color:var(--muted);font-size:13px}
+.legend{margin-top:8px;display:flex;flex-wrap:wrap;gap:8px}
+.legend-item{display:flex;align-items:center;gap:8px;color:var(--muted);font-size:13px}
+.legend .sw{display:inline-block;width:18px;height:12px;border-radius:4px}
+.legend .sw.mst{background:linear-gradient(90deg,var(--accent-2),#10b981);box-shadow:0 6px 20px rgba(16,185,129,0.06)}
+.legend .sw.frontier{background:linear-gradient(90deg,var(--accent),#fb923c);box-shadow:0 6px 20px rgba(255,160,80,0.05)}
+.legend .sw.normal{background:rgba(255,255,255,0.03)}
 .legend .sw.node{background:linear-gradient(90deg,#6ee7b7,#60a5fa)}
 
-.panel{margin-top:12px;color:var(--muted)}
+/* Pseudo panel */
+.panel{margin-top:8px;color:var(--muted);font-size:13px}
 .panel h3{margin:0 0 8px 0}
 
-.canvas-area{background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01));padding:12px;border-radius:12px;display:flex;gap:12px;align-items:flex-start}
-.graph-svg{flex:1;border-radius:10px;background:linear-gradient(180deg, rgba(10,15,25,0.6), rgba(6,8,15,0.4));box-shadow:inset 0 0 80px rgba(0,0,0,0.6);overflow:visible}
+/* ---------- Canvas + Right Panel ---------- */
+/* For mobile: canvas on top, right-panel collapses below */
+.canvas-area{
+  background:linear-gradient(180deg, rgba(255,255,255,0.015), rgba(255,255,255,0));
+  padding:12px;border-radius:12px;display:flex;flex-direction:column;gap:12px;
+}
 
-.edge line{stroke:rgba(255,255,255,0.06)}
+/* SVG graph: responsive width; max-height to keep it reasonable on mobile */
+.graph-svg{
+  width:100%;height:auto;border-radius:10px;background:linear-gradient(180deg, rgba(8,12,20,0.6), rgba(6,8,15,0.35));
+  box-shadow:inset 0 6px 40px rgba(0,0,0,0.6);overflow:visible;
+  max-height:var(--max-canvas-height);
+}
+
+/* Right panel becomes a horizontal scroller or collapsible area on mobile */
+.right-panel{
+  width:100%;display:flex;flex-direction:row;gap:10px;overflow-x:auto;padding-bottom:4px;
+}
+.pq-panel,.history-panel{
+  min-width:220px;background:linear-gradient(180deg, rgba(255,255,255,0.01), transparent);
+  padding:10px;border-radius:10px;border:1px solid rgba(255,255,255,0.03);backdrop-filter: blur(6px);
+}
+
+/* PQ/History lists */
+.pq-list{display:flex;flex-direction:column;gap:6px;max-height:240px;overflow:auto;padding-right:6px}
+.pq-item{display:flex;justify-content:space-between;padding:8px;border-radius:8px;background:linear-gradient(90deg, rgba(255,255,255,0.01), transparent);border:1px solid rgba(255,255,255,0.02)}
+.hint{color:var(--muted);font-size:13px}
+.history-list{display:flex;flex-direction:column;gap:6px;max-height:180px;overflow:auto}
+.history-item{font-size:13px;color:var(--muted);padding:8px;border-radius:8px;background:linear-gradient(90deg, rgba(255,255,255,0.01), transparent);border:1px solid rgba(255,255,255,0.02)}
+
+/* ---------- Edge / Node Styles (interactive) ---------- */
+.edge line{stroke:rgba(255,255,255,0.06);transition:stroke-width .12s ease, stroke .12s ease, opacity .12s ease}
 .edge.normal line{stroke-width:1}
-.edge.frontier line{stroke:rgba(255,160,80,0.95);opacity:0.9}
-.edge.mst line{stroke:rgba(60,200,120,0.98)}
-.edge.overlay{stroke:rgba(60,200,120,0.12)}
-.weight-label{font-size:11px;fill:var(--muted);pointer-events:none;text-anchor:middle}
+.edge.frontier line{stroke:rgba(255,160,80,0.95);opacity:0.92;filter:drop-shadow(0 4px 8px rgba(255,160,80,0.06))}
+.edge.mst line{stroke:rgba(60,200,120,0.98);stroke-linecap:round;filter:drop-shadow(0 6px 16px rgba(60,200,120,0.08))}
+.edge.overlay{stroke:rgba(60,200,120,0.08);stroke-linecap:round}
+.edge.highlight line{stroke-width:4;stroke:var(--accent-3)}
+.edge.mst line{stroke-dasharray:1200;stroke-dashoffset:0;animation:dashIn .9s ease forwards}
+@keyframes dashIn{from{stroke-dashoffset:1200;opacity:0.0}to{stroke-dashoffset:0;opacity:1}}
 
-.node{stroke:rgba(0,0,0,0.35);stroke-width:1.2}
-.node-out{fill:linear-gradient(90deg,#1f2937,#0f1724);fill:#0b1220}
-.node-in{fill:rgba(99,102,241,0.95)}
+.weight-label{font-size:11px;fill:var(--muted);pointer-events:none;text-anchor:middle}
+.weight-label.small{font-size:10px}
+
+/* Node visuals */
+.node{stroke:rgba(0,0,0,0.35);stroke-width:1.4;transition:transform .12s ease, r .12s ease}
+.node-out{fill:#071026}
+.node-in{fill:#4ade80}
+.node-group:hover .node{transform:scale(1.06);cursor:grab}
 .node-label{font-size:11px;fill:#e6eef6;text-anchor:middle;pointer-events:none}
 
-.right-panel{width:260px;display:flex;flex-direction:column;gap:10px}
-.pq-panel,.history-panel{background:var(--card);padding:10px;border-radius:10px}
-.pq-list{display:flex;flex-direction:column;gap:6px;max-height:240px;overflow:auto}
-.pq-item{display:flex;justify-content:space-between;padding:6px;border-radius:6px;background:rgba(255,255,255,0.01)}
-.hint{color:var(--muted);font-size:13px}
-.history-list{display:flex;flex-direction:column;gap:6px;max-height:160px;overflow:auto}
-.history-item{font-size:13px;color:var(--muted);padding:6px;border-radius:6px;background:rgba(255,255,255,0.013)}
-
-.app-footer{color:var(--muted);font-size:13px;padding-top:8px}
-
-/* small responsive */
-@media (max-width:980px){
-  .main-grid{grid-template-columns:1fr;}
-  .right-panel{width:100%}
+/* Hover tweaks for mobile: disable hover transforms but keep focus styles */
+@media (hover: none) and (pointer: coarse) {
+  .node-group:hover .node{transform:none}
+  .edge line{transition:none}
 }
+
+/* ---------- Desktop / Larger screens (make two-column grid) ---------- */
+@media (min-width: 880px) {
+  .main-grid{display:grid;grid-template-columns:340px 1fr;gap:18px;align-items:start}
+  .controls{padding:16px;border-radius:14px}
+  .canvas-area{flex-direction:row;align-items:flex-start}
+  .graph-svg{max-height:640px}
+  .right-panel{width:280px;flex-direction:column;overflow:visible}
+  .buttons{flex-direction:row;flex-wrap:wrap}
+  .buttons button{min-width:92px}
+}
+
+/* ---------- Medium screens: smoother spacing ---------- */
+@media (min-width: 600px) and (max-width:879px) {
+  .controls{padding:14px}
+  .canvas-area{padding:14px}
+  .right-panel{gap:12px}
+}
+
+/* ---------- Small mobile tuning (very small phones) ---------- */
+@media (max-width:420px) {
+  :root{--max-canvas-height:380px}
+  .app-header h1{font-size:18px}
+  .control-row label{width:84px;font-size:12px}
+  button{padding:11px;font-size:15px;border-radius:12px}
+  .pq-panel,.history-panel{min-width:200px;padding:8px}
+  .weight-label{font-size:10px}
+  .node-label{font-size:10px}
+  .legend .sw{width:16px;height:10px}
+  .buttons{gap:6px}
+}
+
+/* ---------- Accessibility / Touch targets ---------- */
+/* Make sliders and selects easier to touch on mobile */
+input[type=range], select { touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
+
+/* ---------- Utility ---------- */
+.hidden{display:none}
+.center{display:flex;align-items:center;justify-content:center}
