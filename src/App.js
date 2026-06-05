@@ -1,512 +1,465 @@
-// FILE: App.js
-import React, { useEffect, useRef, useState } from "react";
-import "./App.css";
+import React, { useState, useEffect, useRef } from 'react';
 
-// Advanced Prim's Algorithm Visualizer (single-file App.js) -------------------------------------------------
-// Features:
-// - Random geometric graph generation (nodes on canvas, weighted by Euclidean distance)
-// - Full-graph edges (complete graph) with weights
-// - Step-by-step Prim's algorithm with Play/Pause/StepBackward/StepForward
-// - Speed control, node-count control, choose start node, reset, regenerate graph
-// - Visual legend, MST weight counter, history for stepping back
-// - Clean SVG-based rendering so it works responsively
+/* ==================================================
+   3D Isometric Projection Helper
+   ================================================== */
+const isoProject = (x, y, z, scale = 50) => {
+  const angle = Math.PI / 6;
+  const sx = (x - y) * Math.cos(angle) * scale;
+  const sy = -(x + y) * Math.sin(angle) * scale - z * scale;
+  return { sx, sy };
+};
 
-// Utility: distance
-const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
+/* ==================================================
+   3D Arrow Component (Isometric)
+   ================================================== */
+const Arrow3D = ({ from, to, color, label, scale = 50 }) => {
+  const p1 = isoProject(from.x, from.y, from.z, scale);
+  const p2 = isoProject(to.x, to.y, to.z, scale);
+  const dx = p2.sx - p1.sx;
+  const dy = p2.sy - p1.sy;
+  const angle = Math.atan2(dy, dx) * (180 / Math.PI);
+  const headLen = 8;
+  return (
+    <g>
+      <line x1={p1.sx} y1={p1.sy} x2={p2.sx} y2={p2.sy} stroke={color} strokeWidth="2.5" />
+      <polygon
+        points={`0,-4 ${headLen},0 0,4`}
+        fill={color}
+        transform={`translate(${p2.sx},${p2.sy}) rotate(${angle})`}
+      />
+      {label && (
+        <text x={p2.sx + 6} y={p2.sy - 6} fill={color} fontSize="12" fontWeight="bold">
+          {label}
+        </text>
+      )}
+    </g>
+  );
+};
 
-// Key for edge map (a < b)
-const edgeKey = (a, b) => (a < b ? `${a}-${b}` : `${b}-${a}`);
+/* ==================================================
+   Expandable explanation box
+   ================================================== */
+const Expandable = ({ title, children }) => {
+  const [open, setOpen] = useState(false);
+  return (
+    <div style={{ marginTop: '1rem' }}>
+      <button
+        onClick={() => setOpen(!open)}
+        style={{
+          background: 'linear-gradient(135deg, #6a11cb, #2575fc)',
+          color: 'white',
+          border: 'none',
+          borderRadius: '25px',
+          padding: '0.6rem 1.5rem',
+          fontWeight: 600,
+          cursor: 'pointer',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '0.5rem',
+          fontSize: '0.9rem',
+        }}
+      >
+        {open ? '🔽 Hide' : '▶️'} {title}
+      </button>
+      {open && (
+        <div
+          style={{
+            background: 'rgba(255,255,255,0.05)',
+            padding: '1rem',
+            borderRadius: '12px',
+            marginTop: '0.5rem',
+            lineHeight: 1.8,
+          }}
+        >
+          {children}
+        </div>
+      )}
+    </div>
+  );
+};
 
-// Build complete edge list for nodes
-function buildEdges(nodes) {
-  const edges = [];
-  for (let i = 0; i < nodes.length; i++) {
-    for (let j = i + 1; j < nodes.length; j++) {
-      const w = dist(nodes[i], nodes[j]);
-      edges.push({ a: i, b: j, w: Number(w.toFixed(2)) });
-    }
-  }
-  return edges;
-}
+/* ==================================================
+   MAIN APP
+   ================================================== */
+function App() {
+  // Coplanarity: c = x·a + y·b, with a=(1,0,0), b=(0,1,0) (XY plane)
+  const [cx, setCx] = useState(2.0);
+  const [cy, setCy] = useState(1.5);
+  const [cz, setCz] = useState(0);  // z=0 → coplanar, else not
+  const [autoPlay, setAutoPlay] = useState(false);
+  const intervalRef = useRef(null);
 
-// Generate random node positions inside width x height with margin
-function genNodes(n, width, height, padding = 40) {
-  const nodes = [];
-  for (let i = 0; i < n; i++) {
-    nodes.push({ x: Math.random() * (width - padding * 2) + padding, y: Math.random() * (height - padding * 2) + padding });
-  }
-  return nodes;
-}
-
-// Minimal binary heap by weight for edges (small and simple)
-class MinHeap {
-  constructor(arr = []) {
-    this.a = arr.slice();
-    this._heapify();
-  }
-  _heapify() {
-    for (let i = Math.floor(this.a.length / 2); i >= 0; i--) this._siftDown(i);
-  }
-  _siftUp(i) {
-    while (i > 0) {
-      const p = Math.floor((i - 1) / 2);
-      if (this.a[i].w >= this.a[p].w) break;
-      [this.a[i], this.a[p]] = [this.a[p], this.a[i]];
-      i = p;
-    }
-  }
-  _siftDown(i) {
-    while (true) {
-      const l = i * 2 + 1;
-      const r = i * 2 + 2;
-      let smallest = i;
-      if (l < this.a.length && this.a[l].w < this.a[smallest].w) smallest = l;
-      if (r < this.a.length && this.a[r].w < this.a[smallest].w) smallest = r;
-      if (smallest === i) break;
-      [this.a[i], this.a[smallest]] = [this.a[smallest], this.a[i]];
-      i = smallest;
-    }
-  }
-  push(x) {
-    this.a.push(x);
-    this._siftUp(this.a.length - 1);
-  }
-  pop() {
-    if (!this.a.length) return null;
-    const top = this.a[0];
-    const last = this.a.pop();
-    if (this.a.length) {
-      this.a[0] = last;
-      this._siftDown(0);
-    }
-    return top;
-  }
-  peek() {
-    return this.a[0] ?? null;
-  }
-  size() {
-    return this.a.length;
-  }
-  toArray() {
-    return this.a.slice();
-  }
-}
-
-export default function App() {
-  const svgRef = useRef(null);
-  const [width, setWidth] = useState(960);
-  const [height, setHeight] = useState(560);
-
-  // Graph state
-  const [nodeCount, setNodeCount] = useState(12);
-  const [nodes, setNodes] = useState(() => genNodes(12, width, height));
-  const [edges, setEdges] = useState(() => buildEdges(nodes));
-
-  // Algorithm state
-  const [inMST, setInMST] = useState([]); // boolean array
-  const [mstEdges, setMstEdges] = useState(new Set()); // set of edgeKey
-  const [frontier, setFrontier] = useState([]); // array of edges currently in pq (for display only)
-  const [history, setHistory] = useState([]); // steps for undo
-  const [running, setRunning] = useState(false);
-  const [speed, setSpeed] = useState(600); // ms per step
-  const [startNode, setStartNode] = useState(0);
-  const [currentNode, setCurrentNode] = useState(null);
-  const [totalWeight, setTotalWeight] = useState(0);
-  const [showWeightsRounded, setShowWeightsRounded] = useState(true);
-
-  // Internal runtime refs
-  const heapRef = useRef(null);
-  const runningRef = useRef(running);
-  runningRef.current = running;
-  const nodesRef = useRef(nodes);
-  nodesRef.current = nodes;
-  const edgesRef = useRef(edges);
-  edgesRef.current = edges;
-
-  // Responsive SVG sizing
+  // Auto‑play: cycle c_z between 0 and 1.5 to show leaving/entering the plane
   useEffect(() => {
-    function handleResize() {
-      const el = svgRef.current?.parentElement;
-      if (!el) return;
-      const w = Math.max(640, Math.min(1200, el.clientWidth - 40));
-      const h = Math.max(360, Math.min(760, Math.floor((w * 9) / 16)));
-      setWidth(w);
-      setHeight(h);
+    if (autoPlay) {
+      intervalRef.current = setInterval(() => {
+        setCz(prev => (prev === 0 ? 1.5 : 0));
+      }, 2000);
+    } else {
+      clearInterval(intervalRef.current);
     }
-    handleResize();
-    window.addEventListener("resize", handleResize);
-    return () => window.removeEventListener("resize", handleResize);
-  }, []);
+    return () => clearInterval(intervalRef.current);
+  }, [autoPlay]);
 
-  // (Re)generate graph whenever nodeCount changes
-  useEffect(() => {
-    const n = Math.max(3, Math.min(28, nodeCount));
-    const newNodes = genNodes(n, width, height);
-    const newEdges = buildEdges(newNodes);
-    setNodes(newNodes);
-    setEdges(newEdges);
-    nodesRef.current = newNodes;
-    edgesRef.current = newEdges;
-    resetAlgorithm(newNodes, newEdges, 0);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [nodeCount]);
+  const isCoplanar = Math.abs(cz) < 0.001;
 
-  // Resize graph positions when width/height change a lot (keeps layout pleasant)
-  useEffect(() => {
-    const newNodes = nodes.map((p) => ({ x: Math.max(30, Math.min(width - 30, p.x)), y: Math.max(30, Math.min(height - 30, p.y)) }));
-    const newEdges = buildEdges(newNodes);
-    setNodes(newNodes);
-    setEdges(newEdges);
-    nodesRef.current = newNodes;
-    edgesRef.current = newEdges;
-    resetAlgorithm(newNodes, newEdges, startNode);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [width, height]);
-
-  // Reset algorithm state
-  function resetAlgorithm(initNodes = nodesRef.current, initEdges = edgesRef.current, start = 0) {
-    const n = initNodes.length;
-    setInMST(Array(n).fill(false));
-    setMstEdges(new Set());
-    setFrontier([]);
-    setHistory([]);
-    heapRef.current = new MinHeap();
-    setCurrentNode(null);
-    setTotalWeight(0);
-    setStartNode(Math.max(0, Math.min(start, n - 1)));
-    setRunning(false);
-  }
-
-  // Initialize algorithm with a start node
-  function initPrim(start = startNode) {
-    const n = nodesRef.current.length;
-    const inM = Array(n).fill(false);
-    inM[start] = true;
-    const h = new MinHeap();
-    // push edges from start
-    edgesRef.current.forEach((e) => {
-      if (e.a === start || e.b === start) h.push({ ...e, from: start });
-    });
-    heapRef.current = h;
-    setInMST(inM);
-    setFrontier(h.toArray());
-    setCurrentNode(start);
-    setMstEdges(new Set());
-    setHistory([]);
-    setTotalWeight(0);
-    setRunning(false);
-  }
-
-  // Helper to snapshot frontier (for history)
-  function frontierSnapshot() {
-    const arr = heapRef.current ? heapRef.current.toArray().map((x) => ({ a: x.a, b: x.b, w: x.w, from: x.from })) : [];
-    return arr;
-  }
-
-  // Single algorithmic step (adds one edge to MST)
-  function stepOnce() {
-    const n = nodesRef.current.length;
-    if (!heapRef.current) {
-      // not initialized
-      initPrim(startNode);
-      return;
-    }
-    if (mstEdges.size >= n - 1) {
-      setRunning(false);
-      return; // done
-    }
-
-    // Pop until we find an edge that connects MST to outside
-    let picked = null;
-    while (heapRef.current.size()) {
-      const e = heapRef.current.pop();
-      const aIn = inMST[e.a];
-      const bIn = inMST[e.b];
-      // we want exactly one in mst and one out
-      if (aIn && !bIn) {
-        picked = { ...e, to: e.b };
-        break;
-      }
-      if (!aIn && bIn) {
-        picked = { ...e, to: e.a };
-        break;
-      }
-      // else ignore edge that connects two in-mst nodes
-    }
-
-    if (!picked) {
-      // graph isn't connected (shouldn't happen for complete graph)
-      setRunning(false);
-      return;
-    }
-
-    // Add picked edge to MST
-    const newMstEdges = new Set(mstEdges);
-    newMstEdges.add(edgeKey(picked.a, picked.b));
-    setMstEdges(newMstEdges);
-
-    // mark new node
-    const newIn = inMST.slice();
-    newIn[picked.to] = true;
-    setInMST(newIn);
-    setCurrentNode(picked.to);
-
-    // add edges from newly added node
-    edgesRef.current.forEach((e) => {
-      if (e.a === picked.to || e.b === picked.to) {
-        // avoid pushing edges to nodes already in MST on both ends
-        const other = e.a === picked.to ? e.b : e.a;
-        if (!newIn[other]) heapRef.current.push({ ...e, from: picked.to });
-      }
-    });
-
-    // update frontier and total weight
-    setFrontier(heapRef.current.toArray());
-    setTotalWeight((w) => Number((w + picked.w).toFixed(2)));
-
-    // push history for undo
-    const snap = {
-      added: { a: picked.a, b: picked.b, w: picked.w, to: picked.to },
-      frontier: frontierSnapshot(),
-      inMST: newIn.slice(),
-      totalWeight: Number((totalWeight + picked.w).toFixed(2)),
-      current: picked.to,
-    };
-    setHistory((h) => [...h, snap]);
-  }
-
-  // Step backward using history
-  function stepBackward() {
-    if (!history.length) return;
-    const last = history[history.length - 1];
-    const newHistory = history.slice(0, history.length - 1);
-    // remove last added edge
-    const newMst = new Set(mstEdges);
-    newMst.delete(edgeKey(last.added.a, last.added.b));
-    setMstEdges(newMst);
-    setInMST(last.inMST.map((x, i) => (i === last.added.to ? false : x)));
-    // rebuild heap from snapshot
-    heapRef.current = new MinHeap(last.frontier.map((e) => ({ a: e.a, b: e.b, w: e.w, from: e.from })));
-    setFrontier(heapRef.current.toArray());
-    setTotalWeight(last.totalWeight);
-    setHistory(newHistory);
-    setCurrentNode(newHistory.length ? newHistory[newHistory.length - 1].current : null);
-  }
-
-  // Running loop
-  useEffect(() => {
-    if (!running) return;
-    let cancelled = false;
-    const tick = async () => {
-      if (cancelled) return;
-      stepOnce();
-      if (runningRef.current && mstEdges.size < nodesRef.current.length - 1) {
-        setTimeout(tick, Math.max(40, speed));
-      } else {
-        setRunning(false);
-      }
-    };
-    setTimeout(tick, Math.max(40, speed));
-    return () => (cancelled = true);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [running, speed]);
-
-  // UI handlers
-  function handleRegenerate() {
-    const newNodes = genNodes(nodeCount, width, height);
-    const newEdges = buildEdges(newNodes);
-    setNodes(newNodes);
-    setEdges(newEdges);
-    resetAlgorithm(newNodes, newEdges, 0);
-  }
-
-  function handleStart() {
-    if (!heapRef.current || heapRef.current.size() === 0) initPrim(startNode);
-    setRunning(true);
-  }
-  function handlePause() {
-    setRunning(false);
-  }
-  function handleStepForward() {
-    if (!heapRef.current || heapRef.current.size() === 0) initPrim(startNode);
-    stepOnce();
-  }
-
-  // Compute rendering helpers
-  const edgeStates = (() => {
-    const setM = mstEdges;
-    const fset = new Set(frontier.map((e) => edgeKey(e.a, e.b)));
-    const obj = {};
-    edges.forEach((e) => {
-      const k = edgeKey(e.a, e.b);
-      obj[k] = {
-        type: setM.has(k) ? "mst" : fset.has(k) ? "frontier" : "normal",
-        w: e.w,
-        a: e.a,
-        b: e.b,
-      };
-    });
-    return obj;
-  })();
-
-  // Small helper to format weights
-  const fmt = (w) => (showWeightsRounded ? w.toFixed(2) : String(w));
+  // Points coplanarity example: A(0,0,0), B(1,0,0), C(0,1,0), D(2,3,0) vs D(2,3,1)
+  const [dZ, setDZ] = useState(0);
+  const pointA = { x: 0, y: 0, z: 0 };
+  const pointB = { x: 2, y: 0, z: 0 };
+  const pointC = { x: 0, y: 2, z: 0 };
+  const pointD = { x: 1.5, y: 1, z: dZ };
+  const AB = { x: pointB.x - pointA.x, y: pointB.y - pointA.y, z: pointB.z - pointA.z };
+  const AC = { x: pointC.x - pointA.x, y: pointC.y - pointA.y, z: pointC.z - pointA.z };
+  const AD = { x: pointD.x - pointA.x, y: pointD.y - pointA.y, z: pointD.z - pointA.z };
+  // Points coplanarity: if AD can be expressed as x·AB + y·AC. Since AB=(1,0,0), AC=(0,1,0), we need AD_z=0
+  const pointsCoplanar = Math.abs(AD.z) < 0.001;
 
   return (
-    <div className="app-root">
-      <header className="app-header">
-        <h1>Prim's Algorithm — Visualizer (Advanced)</h1>
-        <div className="sub">Step-by-step, animated MST construction on a geometric graph</div>
+    <div style={styles.appContainer}>
+      {/* Global styles */}
+      <style>{`
+        * { margin:0; padding:0; box-sizing:border-box; }
+        body { font-family: 'Inter', system-ui, -apple-system, sans-serif; background: #0f0c29; color: #e0e0e0; }
+        .card {
+          background: rgba(255,255,255,0.06);
+          backdrop-filter: blur(12px);
+          border-radius: 20px;
+          padding: 1.5rem;
+          box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+          margin-bottom: 1.5rem;
+          transition: transform 0.3s;
+        }
+        .card:hover { transform: translateY(-3px); }
+        h1, h2, h3, .gradient-text {
+          background: linear-gradient(90deg, #c471f5, #fa71cd);
+          -webkit-background-clip: text;
+          -webkit-text-fill-color: transparent;
+          background-clip: text;
+        }
+        .slider {
+          width: 100%;
+          height: 6px;
+          border-radius: 3px;
+          background: #444;
+          -webkit-appearance: none;
+          outline: none;
+          margin: 10px 0;
+        }
+        .slider::-webkit-slider-thumb {
+          -webkit-appearance: none;
+          width: 20px;
+          height: 20px;
+          border-radius: 50%;
+          background: #6a11cb;
+          cursor: pointer;
+          border: 2px solid white;
+        }
+        .btn {
+          padding: 10px 24px;
+          border: none;
+          border-radius: 30px;
+          font-weight: 600;
+          cursor: pointer;
+          transition: all 0.3s;
+          font-size: 0.95rem;
+        }
+        .btn-primary {
+          background: linear-gradient(45deg, #6a11cb, #2575fc);
+          color: white;
+          box-shadow: 0 4px 15px rgba(106,17,203,0.4);
+        }
+        .btn-primary:hover { transform: translateY(-2px); }
+        @keyframes fadeSlide {
+          from { opacity:0; transform: translateY(20px); }
+          to { opacity:1; transform: translateY(0); }
+        }
+        .animate-section { animation: fadeSlide 0.8s ease-out; }
+        @media (max-width: 768px) {
+          .card { padding: 1rem; }
+          h1 { font-size: 2rem !important; }
+          h2 { font-size: 1.5rem !important; }
+          .flex-row { flex-direction: column !important; }
+        }
+      `}</style>
+
+      {/* Header */}
+      <header style={{ textAlign: 'center', padding: '2rem 1rem 1rem' }}>
+        <h1 style={{ fontSize: 'clamp(2rem, 5vw, 3rem)', marginBottom: '0.3rem' }}>
+          📐 Coplanarity of Vectors
+        </h1>
+        <p style={{ color: '#aaa', fontSize: '1.1rem' }}>
+          When three vectors lie in the same plane — the essence of linear dependence
+        </p>
+        <p style={{ color: '#888', marginTop: '0.5rem', fontSize: '0.9rem' }}>
+          Created by <span style={{ color: '#fa71cd', fontWeight: 600 }}>Apurav</span>
+        </p>
       </header>
 
-      <div className="main-grid">
-        <aside className="controls">
-          <div className="control-row">
-            <label>Nodes</label>
-            <input type="range" min={4} max={28} value={nodeCount} onChange={(e) => setNodeCount(Number(e.target.value))} />
-            <div className="val">{nodeCount}</div>
+      {/* ---- What is Coplanarity? ---- */}
+      <div className="card animate-section" style={{ maxWidth: '900px', margin: '0 auto' }}>
+        <h2>🔸 What is Coplanarity?</h2>
+        <p style={{ marginTop: '0.5rem', lineHeight: 1.8 }}>
+          Three vectors <b>a</b>, <b>b</b>, <b>c</b> are <b>coplanar</b> if they all lie in the same plane.
+          This happens when one of them can be written as a <b>linear combination</b> of the other two
+          (provided those two are not collinear).
+        </p>
+        <div style={{ background: '#1e1e2f', padding: '1rem', borderRadius: '12px', margin: '1rem 0' }}>
+          <strong>🔑 The Magic Formula:</strong>
+          <div style={{ fontSize: '2rem', fontFamily: 'monospace', margin: '0.5rem 0' }}>
+            <span style={{ color: '#ff6b6b' }}>c</span> = x <span style={{ color: '#6a11cb' }}>a</span> + y <span style={{ color: '#2575fc' }}>b</span>
           </div>
-
-          <div className="control-row">
-            <label>Start Node</label>
-            <select value={startNode} onChange={(e) => setStartNode(Number(e.target.value))}>
-              {nodes.map((_, i) => (
-                <option key={i} value={i}>{`Node ${i}`}</option>
-              ))}
-            </select>
-          </div>
-
-          <div className="control-row">
-            <label>Speed (ms)</label>
-            <input type="range" min={40} max={1200} value={speed} onChange={(e) => setSpeed(Number(e.target.value))} />
-            <div className="val">{speed}ms</div>
-          </div>
-
-          <div className="buttons">
-            <button onClick={handleRegenerate}>Regenerate Graph</button>
-            <button onClick={() => { resetAlgorithm(); initPrim(startNode); }}>Init Prim</button>
-            {!running ? (
-              <button className="primary" onClick={handleStart}>Play</button>
-            ) : (
-              <button className="danger" onClick={handlePause}>Pause</button>
-            )}
-            <button onClick={handleStepForward}>Step Forward</button>
-            <button onClick={stepBackward} disabled={!history.length}>Step Back</button>
-            <button onClick={() => resetAlgorithm()} title="Clear all algorithm progress">Reset</button>
-          </div>
-
-          <div className="meta">
-            <div><strong>MST Weight</strong>: {totalWeight.toFixed(2)}</div>
-            <div><strong>Edges in MST</strong>: {mstEdges.size}/{Math.max(0, nodes.length - 1)}</div>
-            <div><strong>Frontier size</strong>: {frontier.length}</div>
-          </div>
-
-          <div className="options">
-            <label><input type="checkbox" checked={showWeightsRounded} onChange={(e) => setShowWeightsRounded(e.target.checked)} /> Round weights</label>
-          </div>
-
-          <div className="legend">
-            <div className="legend-item"><span className="sw mst"/> MST Edge</div>
-            <div className="legend-item"><span className="sw frontier"/> Frontier (PQ)</div>
-            <div className="legend-item"><span className="sw normal"/> Normal Edge</div>
-            <div className="legend-item"><span className="sw node"/> Node</div>
-          </div>
-
-          <div className="panel">
-            <h3>Pseudo / Notes</h3>
-            <ol>
-              <li>Choose a start node.</li>
-              <li>Push its edges into a min-priority queue.</li>
-              <li>Pop the smallest edge that connects to an outside node and add it to MST.</li>
-              <li>Push edges from the newly added node that lead outside.</li>
-              <li>Repeat until MST has n-1 edges.</li>
-            </ol>
-          </div>
-
-        </aside>
-
-        <section className="canvas-area">
-          <svg ref={svgRef} viewBox={`0 0 ${width} ${height}`} width={width} height={height} className="graph-svg">
-            {/* edges first */}
-            <g className="edges">
-              {edges.map((e, i) => {
-                const k = edgeKey(e.a, e.b);
-                const st = edgeStates[k];
-                const A = nodes[e.a];
-                const B = nodes[e.b];
-                const lineClass = st.type === "mst" ? "edge mst" : st.type === "frontier" ? "edge frontier" : "edge normal";
-                const strokeW = st.type === "mst" ? 3.2 : st.type === "frontier" ? 2 : 1.0;
-                return (
-                  <g key={k} className={lineClass}>
-                    <line x1={A.x} y1={A.y} x2={B.x} y2={B.y} strokeWidth={strokeW} strokeLinecap="round" />
-                    {/* weight label */}
-                    <text x={(A.x + B.x) / 2} y={(A.y + B.y) / 2} className="weight-label">{fmt(e.w)}</text>
-                  </g>
-                );
-              })}
-            </g>
-
-            {/* MST highlight overlay (to make MST pop) */}
-            <g className="mst-overlay">
-              {Array.from(mstEdges).map((k) => {
-                const [a, b] = k.split("-").map(Number);
-                const A = nodes[a];
-                const B = nodes[b];
-                return <line key={`overlay-${k}`} className="edge overlay" x1={A.x} y1={A.y} x2={B.x} y2={B.y} strokeWidth={4} />;
-              })}
-            </g>
-
-            {/* nodes */}
-            <g className="nodes">
-              {nodes.map((p, i) => {
-                const active = inMST[i];
-                return (
-                  <g key={`n-${i}`} className="node-group">
-                    <circle cx={p.x} cy={p.y} r={active ? 11 : 8} className={"node " + (active ? "node-in" : "node-out")} />
-                    <text x={p.x} y={p.y + 4} className="node-label">{i}</text>
-                  </g>
-                );
-              })}
-            </g>
-          </svg>
-
-          <div className="right-panel">
-            <div className="pq-panel">
-              <h4>Priority Queue (top 12)</h4>
-              <div className="pq-list">
-                {frontier.slice(0, 12).sort((a, b) => a.w - b.w).map((e, idx) => (
-                  <div key={`${e.a}-${e.b}-${idx}`} className="pq-item">
-                    <div className="pq-edge">{e.a} ↔ {e.b}</div>
-                    <div className="pq-w">{fmt(e.w)}</div>
-                  </div>
-                ))}
-                {!frontier.length && <div className="hint">priority queue is empty — init Prim or start</div>}
-              </div>
-            </div>
-
-            <div className="history-panel">
-              <h4>History</h4>
-              <div className="history-list">
-                {history.slice().reverse().map((h, i) => (
-                  <div key={i} className="history-item">Added: {h.added.a}↔{h.added.b} ({h.added.w.toFixed(2)})</div>
-                ))}
-                {!history.length && <div className="hint">no steps yet</div>}
-              </div>
-            </div>
-          </div>
-
-        </section>
+          <p>where <b>x, y</b> are scalars, and <b>a</b> and <b>b</b> are not parallel (non‑collinear).</p>
+          <p style={{ fontSize: '0.9rem', marginTop: '0.5rem' }}>
+            This means <b>c</b> can be “built” by stretching/adding <b>a</b> and <b>b</b> — it never leaves their plane.
+          </p>
+        </div>
+        <Expandable title="Why must a and b be non‑collinear?">
+          <p>
+            If <b>a</b> and <b>b</b> are collinear, they only span a <b>line</b>, not a plane.
+            Then a third vector <b>c</b> could easily lie outside that line, and the condition `c = x a + y b` would only produce vectors on that same line.
+            So for a true plane, we need two <b>independent</b> directions.
+          </p>
+        </Expandable>
       </div>
 
-      <footer className="app-footer">Made with ❤️ — Prim's Visualizer • Drag window to resize • Feel free to ask for extras (drag nodes, persist graphs, export PNG)</footer>
+      {/* ---- Interactive Demo 1: Vector c = x a + y b ---- */}
+      <div className="card animate-section" style={{ maxWidth: '900px', margin: '1.5rem auto' }}>
+        <h2>🎮 Live 3D Explorer: c = x·a + y·b</h2>
+        <p style={{ marginTop: '0.5rem', lineHeight: 1.8 }}>
+          In this demo, <b>a = (1,0,0)</b> (purple) and <b>b = (0,1,0)</b> (blue) span the <b>XY plane</b>.
+          You can change the components of <b>c</b>. If <b>c_z = 0</b>, then <b>c</b> lies in the plane → coplanar.
+        </p>
+
+        <div className="flex-row" style={{ display: 'flex', gap: '2rem', flexWrap: 'wrap', marginTop: '1rem' }}>
+          {/* 3D SVG */}
+          <div style={{ flex: '1 1 450px', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+            <svg viewBox="-200 -250 400 350" width="100%" style={{ maxWidth: '400px' }}>
+              {/* Coordinate axes */}
+              <Arrow3D from={{x:0,y:0,z:0}} to={{x:3.5,y:0,z:0}} color="#aaa" scale={55} label="x" />
+              <Arrow3D from={{x:0,y:0,z:0}} to={{x:0,y:3.5,z:0}} color="#aaa" scale={55} label="y" />
+              <Arrow3D from={{x:0,y:0,z:0}} to={{x:0,y:0,z:3.5}} color="#aaa" scale={55} label="z" />
+
+              {/* Basis vectors a and b */}
+              <Arrow3D from={{x:0,y:0,z:0}} to={{x:2.5,y:0,z:0}} color="#6a11cb" scale={55} label="a" />
+              <Arrow3D from={{x:0,y:0,z:0}} to={{x:0,y:2.5,z:0}} color="#2575fc" scale={55} label="b" />
+
+              {/* Plane span (XY plane) – translucent polygon */}
+              <polygon
+                points={`${isoProject(2.5,0,0,55).sx},${isoProject(2.5,0,0,55).sy}
+                         ${isoProject(0,2.5,0,55).sx},${isoProject(0,2.5,0,55).sy}
+                         ${isoProject(2.5,2.5,0,55).sx},${isoProject(2.5,2.5,0,55).sy}`}
+                fill="rgba(106,17,203,0.15)" stroke="#6a11cb" strokeWidth="1" strokeDasharray="4"
+              />
+
+              {/* Vector c */}
+              <Arrow3D from={{x:0,y:0,z:0}} to={{x:cx, y:cy, z:cz}} color="#ff6b6b" scale={55} label="c" />
+
+              {/* Projection of c onto the plane when z != 0 */}
+              {cz !== 0 && (
+                <>
+                  <Arrow3D from={{x:0,y:0,z:0}} to={{x:cx, y:cy, z:0}} color="#ffaa00" scale={55} label="proj" />
+                  <line
+                    x1={isoProject(cx,cy,0,55).sx} y1={isoProject(cx,cy,0,55).sy}
+                    x2={isoProject(cx,cy,cz,55).sx} y2={isoProject(cx,cy,cz,55).sy}
+                    stroke="#ffaa00" strokeWidth="1.5" strokeDasharray="5"
+                  />
+                </>
+              )}
+            </svg>
+
+            <div style={{ width: '100%', marginTop: '0.5rem' }}>
+              <div><label>c_x = {cx.toFixed(1)}</label>
+                <input type="range" className="slider" min="0" max="3" step="0.1" value={cx}
+                  onChange={e => setCx(parseFloat(e.target.value))} />
+              </div>
+              <div><label>c_y = {cy.toFixed(1)}</label>
+                <input type="range" className="slider" min="0" max="3" step="0.1" value={cy}
+                  onChange={e => setCy(parseFloat(e.target.value))} />
+              </div>
+              <div><label>c_z = {cz.toFixed(1)}</label>
+                <input type="range" className="slider" min="-2" max="2" step="0.1" value={cz}
+                  onChange={e => setCz(parseFloat(e.target.value))} />
+              </div>
+            </div>
+
+            <button className="btn btn-primary" onClick={() => setAutoPlay(!autoPlay)} style={{ marginTop: '0.8rem' }}>
+              {autoPlay ? '⏸️ Stop Auto‑play' : '▶️ Auto‑play (z cycles 0 ↔ 1.5)'}
+            </button>
+
+            <div style={{ marginTop: '0.8rem', fontWeight: 'bold', fontSize: '1.1rem',
+                          color: isCoplanar ? '#4caf50' : '#ff6b6b' }}>
+              {isCoplanar
+                ? '✅ Coplanar! c = x·a + y·b (z = 0)'
+                : '❌ Not Coplanar – c has a z‑component → cannot be built from a and b alone'}
+            </div>
+            <p style={{ fontSize: '0.85rem', marginTop: '0.3rem' }}>
+              c = {cx.toFixed(1)}·a + {cy.toFixed(1)}·b + {cz.toFixed(1)}·k
+            </p>
+          </div>
+
+          {/* Explanation */}
+          <div style={{ flex: '1 1 300px' }}>
+            <h3>🧠 How to feel it</h3>
+            <ul style={{ lineHeight: 1.8 }}>
+              <li>Move <b>c_x</b> and <b>c_y</b>: c slides within the XY plane — always coplanar.</li>
+              <li>Move <b>c_z</b> away from zero: c <b>pops out</b> of the plane.</li>
+              <li>The <b>orange projection</b> shows the part of c that lives in the plane; the dashed line is the “outside” component.</li>
+              <li>Auto‑play makes c jump in and out of the plane, so you can see the condition visually.</li>
+            </ul>
+            <Expandable title="Why does c_z = 0 guarantee coplanarity?">
+              <p>
+                Since <b>a</b> and <b>b</b> lie entirely in the XY plane, any linear combination x·a + y·b will also have z = 0.
+                So if <b>c</b> has z = 0, it can be expressed as x·a + y·b (we just set x = c_x, y = c_y).
+                If c_z ≠ 0, no matter what x and y we choose, the z‑coordinate of x·a + y·b will always be 0, so c cannot be built.
+                Therefore, <b>c_z = 0</b> is the exact coplanarity condition for these basis vectors.
+              </p>
+            </Expandable>
+          </div>
+        </div>
+      </div>
+
+      {/* ---- Coplanarity of Points ---- */}
+      <div className="card animate-section" style={{ maxWidth: '900px', margin: '1.5rem auto' }}>
+        <h2>📍 Coplanarity of Four Points (A, B, C, D)</h2>
+        <p style={{ marginTop: '0.5rem', lineHeight: 1.8 }}>
+          Four points are coplanar if the vectors <b>AB</b>, <b>AC</b>, <b>AD</b> are coplanar.
+          Use the same condition: <b>AD = x·AB + y·AC</b>.
+        </p>
+        <div style={{ background: '#1e1e2f', padding: '1rem', borderRadius: '12px', margin: '1rem 0' }}>
+          <strong>Formula for Points:</strong>
+          <div style={{ fontSize: '1.5rem', fontFamily: 'monospace', margin: '0.5rem 0' }}>
+            AD = x·AB + y·AC
+          </div>
+        </div>
+
+        <div className="flex-row" style={{ display: 'flex', gap: '2rem', flexWrap: 'wrap', marginTop: '1rem' }}>
+          {/* Points 3D demo */}
+          <div style={{ flex: '1 1 400px', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+            <svg viewBox="-200 -250 400 350" width="100%" style={{ maxWidth: '400px' }}>
+              <Arrow3D from={{x:0,y:0,z:0}} to={{x:3,y:0,z:0}} color="#aaa" scale={55} label="x" />
+              <Arrow3D from={{x:0,y:0,z:0}} to={{x:0,y:3,z:0}} color="#aaa" scale={55} label="y" />
+              <Arrow3D from={{x:0,y:0,z:0}} to={{x:0,y:0,z:3}} color="#aaa" scale={55} label="z" />
+
+              {/* Points as spheres */}
+              {[{pt: pointA, lbl: 'A', col: '#6a11cb'},
+                {pt: pointB, lbl: 'B', col: '#2575fc'},
+                {pt: pointC, lbl: 'C', col: '#2575fc'},
+                {pt: pointD, lbl: 'D', col: '#ff6b6b'}].map(({pt, lbl, col}) => {
+                const proj = isoProject(pt.x, pt.y, pt.z, 55);
+                return (
+                  <g key={lbl}>
+                    <circle cx={proj.sx} cy={proj.sy} r="5" fill={col} />
+                    <text x={proj.sx+6} y={proj.sy-6} fill={col} fontSize="12" fontWeight="bold">{lbl}</text>
+                  </g>
+                );
+              })}
+            </svg>
+            <div style={{ width: '100%', marginTop: '0.5rem' }}>
+              <label style={{ fontWeight: 600 }}>D z‑coordinate = {dZ.toFixed(1)}</label>
+              <input type="range" className="slider" min="-1.5" max="1.5" step="0.1" value={dZ}
+                onChange={e => setDZ(parseFloat(e.target.value))} />
+            </div>
+            <p style={{ marginTop: '0.5rem', fontSize: '0.9rem' }}>
+              A(0,0,0), B(2,0,0), C(0,2,0), D(1.5, 1, {dZ.toFixed(1)})
+            </p>
+            <p style={{ fontWeight: 'bold', color: pointsCoplanar ? '#4caf50' : '#ff6b6b' }}>
+              {pointsCoplanar
+                ? '✅ Points are coplanar (D lies in the plane ABC)'
+                : '❌ Not coplanar – D has a z‑component → cannot be expressed as x·AB + y·AC'}
+            </p>
+          </div>
+
+          <div style={{ flex: '1 1 300px' }}>
+            <h3>📖 Step‑by‑step</h3>
+            <ol style={{ lineHeight: 1.8 }}>
+              <li>Pick one point, say A, as the reference.</li>
+              <li>Compute AB = B − A, AC = C − A, AD = D − A.</li>
+              <li>Check if AD can be written as x·AB + y·AC.</li>
+              <li>Here AB = (1,0,0), AC = (0,1,0). So AD = (x, y, 0).</li>
+              <li>Thus AD_z must be 0 for coplanarity.</li>
+            </ol>
+            <Expandable title="Why this works – the geometry">
+              <p>
+                AB and AC span a plane (the XY plane in this case). If D lies in that plane, then the vector AD must also lie in that plane.
+                Since any vector in the XY plane has zero z‑component, AD_z = 0 is the condition.
+                The moment AD_z ≠ 0, D lifts off the plane.
+              </p>
+            </Expandable>
+          </div>
+        </div>
+      </div>
+
+      {/* ---- Worked Example ---- */}
+      <div className="card animate-section" style={{ maxWidth: '900px', margin: '1.5rem auto' }}>
+        <h2>📚 CBSE Board Example</h2>
+        <p>
+          <b>Q:</b> Show that the points A(1,0,2), B(3,1,4), C(2,2,6), D(1,5,7) are coplanar.
+        </p>
+        <div style={{ background: '#1e1e2f', padding: '1rem', borderRadius: '12px', marginTop: '1rem' }}>
+          <p>AB = (2, 1, 2)</p>
+          <p>AC = (1, 2, 4)</p>
+          <p>AD = (0, 5, 5)</p>
+          <p>We need to find x, y such that AD = x·AB + y·AC.</p>
+          <p>From the x‑coordinate: 0 = 2x + y → y = -2x</p>
+          <p>From the y‑coordinate: 5 = x + 2y → 5 = x - 4x → -3x = 5 → x = -5/3, then y = 10/3</p>
+          <p>Check z‑coordinate: x·AB_z + y·AC_z = (-5/3)*2 + (10/3)*4 = (-10/3 + 40/3) = 30/3 = 10 ≠ 5</p>
+          <p style={{ color: '#ff6b6b', fontWeight: 600 }}>✘ Since the z‑coordinate doesn’t match, AD cannot be expressed as a linear combination — the points are <b>not coplanar</b>.</p>
+        </div>
+        <Expandable title="What if the example was designed to work?">
+          <p>
+            If the numbers had satisfied the third equation, we would have found scalars x and y. That would prove coplanarity.
+            But here the inconsistency shows the points are <b>non‑coplanar</b>, meaning they form a tetrahedron in space.
+          </p>
+        </Expandable>
+      </div>
+
+      {/* ---- Key Formula Recap ---- */}
+      <div className="card animate-section" style={{ maxWidth: '900px', margin: '1.5rem auto', textAlign: 'center' }}>
+        <h2>🧠 The One Formula to Remember</h2>
+        <div
+          style={{
+            background: '#1e1e2f',
+            padding: '2rem',
+            borderRadius: '20px',
+            display: 'inline-block',
+            marginTop: '1rem',
+          }}
+        >
+          <span style={{ fontSize: '2.5rem', fontFamily: 'monospace' }}>
+            c = x a + y b
+          </span>
+          <p style={{ marginTop: '0.5rem', fontSize: '1.1rem' }}>
+            (a, b non‑collinear; x, y ∈ ℝ)
+          </p>
+        </div>
+        <p style={{ marginTop: '1.5rem', color: '#aaa', fontStyle: 'italic' }}>
+          “Coplanarity means one vector is a combination of the other two — no escape from their plane.”
+        </p>
+      </div>
+
+      {/* Footer */}
+      <footer style={{ textAlign: 'center', padding: '2rem 1rem', color: '#666', fontSize: '0.9rem' }}>
+        <p>Made with ❤️ for Class 12 CBSE Students</p>
+        <p style={{ marginTop: '0.3rem' }}>
+          Created by <span style={{ color: '#fa71cd', fontWeight: 600 }}>Apurav</span>
+        </p>
+      </footer>
     </div>
   );
 }
 
+/* ==================================================
+   Inline Styles
+   ================================================== */
+const styles = {
+  appContainer: {
+    maxWidth: '1000px',
+    margin: '0 auto',
+    padding: '0 1rem 2rem',
+    color: '#e0e0e0',
+  },
+};
 
-/*
-  End of App.js
-*/
-
-/* FILE: App.css */
-
+export default App;
